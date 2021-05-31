@@ -25,8 +25,8 @@ func main() {
 	app.Version = "0.0.1"
 	app.Flags = []cli.Flag{
 		cli.StringFlag{
-			Name:  "prefix, p",
-			Usage: "Prefix to search for at the start of address",
+			Name:  "prefixes, p",
+			Usage: "Prefixes to search for at the start of address, comma separated",
 		},
 		cli.IntFlag{
 			Name:  "count, n",
@@ -40,14 +40,22 @@ func main() {
 	}
 	app.Action = func(c *cli.Context) {
 
-		iterations = estimatedIterations(c.String("prefix"))
+		longestPrefix := ""
+		prefixes := strings.Split(c.String("prefixes"), ",")
+		for i, prefix := range prefixes {
+			prefixes[i] = strings.TrimSpace(prefix)
+			if len(prefix) > len(longestPrefix) {
+				longestPrefix = prefix
+			}
+		}
+		iterations = estimatedIterations(longestPrefix)
 		quiet := c.Bool("quiet")
 
 		if !quiet {
 			fmt.Println("Estimated number of iterations needed:", int(iterations))
 		}
 		for i := 0; i < c.Int("count") || c.Int("count") == 0; i++ {
-			seed, addr, err := generateVanityAddress(c.String("prefix"), quiet)
+			seed, addr, err := generateVanityAddress(prefixes, quiet)
 			if err != nil {
 				fmt.Println("Error:", err)
 				os.Exit(1)
@@ -75,9 +83,11 @@ func isValidPrefix(prefix string) bool {
 	return true
 }
 
-func generateVanityAddress(prefix string, quiet bool) (string, types.Account, error) {
-	if !isValidPrefix(prefix) {
-		return "", "", fmt.Errorf("Invalid character in prefix")
+func generateVanityAddress(prefixes []string, quiet bool) (string, types.Account, error) {
+	for _, prefix := range prefixes {
+		if !isValidPrefix(prefix) {
+			return "", "", fmt.Errorf("Invalid character in prefix " + prefix)
+		}
 	}
 
 	c := make(chan string, 100)
@@ -105,9 +115,11 @@ func generateVanityAddress(prefix string, quiet bool) (string, types.Account, er
 				pub, _ := address.KeypairFromSeed(seed, 0)
 				address := string(address.PubKeyToAddress(pub))
 
-				if strings.HasPrefix(address[6:], prefix) {
-					c <- seed
-					break
+				for _, prefix := range prefixes {
+					if strings.HasPrefix(address[6:], prefix) {
+						c <- seed
+						break
+					}
 				}
 			}
 		}(c, progress)
